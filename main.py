@@ -1,36 +1,42 @@
-import os
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-bot = Bot(token=TOKEN)
+import os
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET_PATH", "webhook")
+
 app = Flask(__name__)
 
-# Создаем диспетчер и регистрируем команды
-dispatcher = Dispatcher(bot=bot, update_queue=None, workers=0, use_context=True)
+bot_app = ApplicationBuilder().token(TOKEN).build()
 
-def start(update: Update, context):
-    update.message.reply_text("Привет! Я жив и работаю через webhook 🚀")
+# Пример команды /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Привет! Я живой 🤖")
 
-dispatcher.add_handler(CommandHandler("start", start))
+# Регистрируем хендлер
+bot_app.add_handler(CommandHandler("start", start))
 
-# Webhook endpoint
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
+
+@app.route(f"/{WEBHOOK_SECRET}", methods=["POST"])
+async def webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, bot_app.bot)
+    await bot_app.process_update(update)
     return "ok"
 
+
+# Flask "ping" маршрут для проверки доступности
 @app.route("/", methods=["GET"])
 def home():
-    return "Бот работает. Всё огонь 🔥"
+    return "Бот работает!"
+
 
 if __name__ == "__main__":
-    PORT = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=PORT)
+    import asyncio
 
-# Запуск двух потоков: Flask и Telegram
-if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    run_telegram_bot()
+    # Запускаем Flask
+    port = int(os.environ.get("PORT", 5000))
+    asyncio.run(bot_app.initialize())  # Инициализация
+    app.run(host="0.0.0.0", port=port)
